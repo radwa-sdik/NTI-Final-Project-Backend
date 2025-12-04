@@ -1,4 +1,4 @@
-const productModel = require("../models/product");
+const productModel = require("../models/products");
 
 exports.createProduct = async (req, res) => {
     const productData = req.body;
@@ -10,12 +10,39 @@ exports.createProduct = async (req, res) => {
         res.status(500).json({ message: "Error creating product", error: error.message });
     }
 };
-exports.getAllProducts = async (req, res) => {
+exports.getAllProductsPaginated = async (req, res) => {
     try {
-        const products = await productModel.find();
-        res.status(200).json({ products });
+        const { name, minPrice, maxPrice, inStock, categories} = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const filter = {};
+        if (name) {
+            filter.name = { $regex: name, $options: 'i' };
+        }
+        if (minPrice) {
+            filter.price = { ...filter.price, $gte: Number(minPrice) };
+        }
+        if (maxPrice) {
+            filter.price = { ...filter.price, $lte: Number(maxPrice) };
+        }
+        if (inStock !== undefined) {
+            filter.quantity = inStock === 'true' ? { $gt: 0 } : 0;
+        }
+        if (categories) {
+            const list = categories.split(",");       
+            filter.category = { $in: list };
+        }
+        const products = await productModel.find(filter).skip(skip).limit(limit);
+        const total = await productModel.countDocuments(filter);
+        res.status(200).json({
+            products,
+            total,
+            page,
+            pages: Math.ceil(total / limit)
+        });
     } catch (error) {
-        res.status(500).json({ message: "Error fetching products", error: error.message });
+        res.status(500).json({ message: "Error searching products", error: error.message });
     }
 };
 exports.getProductById = async (req, res) => {
@@ -55,29 +82,19 @@ exports.deleteProduct = async (req, res) => {
         res.status(500).json({ message: "Error deleting product", error: error.message });
     }
 };
-exports.searchProducts = async (req, res) => {
+
+exports.addProductImage = async (req, res) => {
     try {
-        const { name, minPrice, maxPrice, inStock, categories } = req.query;
-        const filter = {};
-        if (name) {
-            filter.name = { $regex: name, $options: 'i' };
+        const productId = req.params.id;
+        const { imageUrl, isMain } = req.body;
+        const product = await productModel.findById(productId);
+        if (!product) {
+            return res.status(404).json({ message: "Product not found" });
         }
-        if (minPrice) {
-            filter.price = { ...filter.price, $gte: Number(minPrice) };
-        }
-        if (maxPrice) {
-            filter.price = { ...filter.price, $lte: Number(maxPrice) };
-        }
-        if (inStock !== undefined) {
-            filter.quantity = inStock === 'true' ? { $gt: 0 } : 0;
-        }
-        if (categories) {
-            const list = categories.split(",");       
-            filter.category = { $in: list };
-        }
-        const products = await productModel.find(filter);
-        res.status(200).json({ products });
+        product.productImages.push({ imageUrl, isMain });
+        await product.save();
+        res.status(200).json({ message: "Image added successfully", product });
     } catch (error) {
-        res.status(500).json({ message: "Error searching products", error: error.message });
+        res.status(500).json({ message: "Error adding image", error: error.message });
     }
 };
