@@ -7,9 +7,13 @@ const orderSchema = new mongoose.Schema({
         quantity: {type: Number, default: 1},
         price: {type: Number, required: true}
     }],
+    subTotal: {type: Number, required: true},
     totalPrice: {type: Number, required: true},
-    status: {type: String, enum: ['Pending', 'Shipped', 'Delivered', 'Cancelled'], default: 'Pending'},
+    tax: {type: Number},
+    shipping: {type: Number},
+    status: {type: String, enum: ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'], default: 'Pending'},
     createdAt: {type: Date, default: Date.now},
     updatedAt: {type: Date, default: Date.now}
 });
+
 module.exports = mongoose.model('Order', orderSchema);

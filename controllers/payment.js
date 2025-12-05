@@ -1,40 +1,81 @@
 const payment = require("../models/payment");
-const paypal = require("../helpers/paypal.js");
+const { client, ordersController, paymentsController } = require("../helpers/paypal.js");
+const cartModel = require("../models/cart");
+const orderModel = require("../models/orders");
+const paymentModel = require("../models/payment");
 
 
 exports.createPaypalOrder = async (req, res) => {
     try {
         const userId = req.user.userId;
+        const { addressId } = req.body;
 
-        // get cart total (never trust frontend)
-        const cart = await cartModel.findOne({ userId });
-        if (!cart || cart.items.length === 0) {
-            return res.status(400).json({ message: "Cart is empty" });
-        }
+        const cart = await cartModel.findOne({ userId }).populate("items.productId");
+        if (!cart || !cart.items.length)
+            return res.status(400).json({ success: false, message: "Cart is empty" });
 
-        const totalAmount = cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const subtotal = cart.items.reduce(
+            (sum, item) =>
+                sum + (item.priceBerUnit || item.price) * item.quantity,
+            0
+        );
 
-        const request = new paypal.orders.OrdersCreateRequest();
-        request.prefer("return=representation");
-        request.requestBody({
-            intent: "CAPTURE",
-            purchase_units: [
-                {
-                    amount: {
-                        currency_code: "USD",
-                        value: totalAmount.toFixed(2)
-                    }
-                }
-            ]
+        const shipping = 10;
+        const tax = subtotal * 0.1;
+        const total = subtotal + shipping + tax;
+
+        const orderPayload = {
+            body: {
+                intent: "CAPTURE",
+                purchaseUnits: [
+                    {
+                        amount: {
+                            currencyCode: "USD",
+                            value: total.toFixed(2),
+                            breakdown: {
+                                itemTotal: {
+                                    currencyCode: "USD",
+                                    value: subtotal.toFixed(2),
+                                },
+                                shipping: {
+                                    currencyCode: "USD",
+                                    value: shipping.toFixed(2),
+                                },
+                                taxTotal: {
+                                    currencyCode: "USD",
+                                    value: tax.toFixed(2),
+                                },
+                            },
+                        },
+
+                        items: cart.items.map((p) => ({
+                            name: p.productId.name,
+                            quantity: p.quantity.toString(),
+                            unitAmount: {
+                                currencyCode: "USD",
+                                value: (p.priceBerUnit || p.price).toFixed(2),
+                            },
+                        })),
+                    },
+                ],
+            },
+            prefer: "return=minimal",
+        };
+
+        console.log("Creating PayPal order with payload:", orderPayload.body.purchaseUnits[0].items);
+
+        const { body, statusCode } = await ordersController.createOrder(orderPayload);
+
+        return res.status(statusCode).json({
+            paypalOrderId: JSON.parse(body).id,
         });
-
-        const paypalOrder = await paypal.client().execute(request);
-
-        res.json({ paypalOrderId: paypalOrder.result.id });
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Error creating PayPal order' });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({
+            success: false,
+            message: "Failed creating PayPal order",
+            error: err.message,
+        });
     }
 };
 
@@ -44,84 +85,107 @@ exports.onPaypalApprove = async (req, res) => {
     try {
         const userId = req.user.userId;
         const { paypalOrderId, addressId } = req.body;
+        console.log("Received PayPal Order ID:", paypalOrderId);
 
-        // 1) Capture PayPal payment
-        const captureReq = new paypal.orders.OrdersCaptureRequest(paypalOrderId);
-        captureReq.requestBody({});
-        
-        let capture;
+        if (!paypalOrderId) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing PayPal order ID"
+            });
+        }
+
+        // CAPTURE
+        let captureResponse;
         try {
-            capture = await paypal.client().execute(captureReq);
+            captureResponse = await ordersController.captureOrder({
+                id: paypalOrderId,
+                prefer: "return=representation",
+            });
         } catch (err) {
-            // Payment capture failed completely
+            console.error("PayPal Capture ERROR =>", err);
+
+            // Return PayPal error directly
             return res.status(400).json({
                 success: false,
-                message: "Payment capture failed",
-                error: err.message,
+                message: "PayPal capture failed",
+                details: err.result || err.message
             });
         }
 
-        // 2) Check PayPal status
-        const paypalStatus = capture.result.status;
-        const paymentStatus = capture.result.purchase_units[0].payments.captures[0].status;
+        const captureResult = JSON.parse(captureResponse.body);
 
-        if (paypalStatus !== "COMPLETED" || paymentStatus !== "COMPLETED") {
+        // VALIDATE CAPTURE STATUS
+        const paypalStatus = captureResult.status;
+        const captureDetails =
+            captureResult.purchase_units?.[0]?.payments?.captures?.[0];
+
+        if (!captureDetails || captureDetails.status !== "COMPLETED") {
             return res.status(400).json({
                 success: false,
-                message: "Payment not completed, order will not be created",
+                message: "Payment not completed",
                 paypalStatus,
-                paymentStatus
+                captureStatus: captureDetails?.status,
             });
         }
 
-        // 3) Payment is OK → create order
+        // READ CART
         const cart = await cartModel.findOne({ userId });
-        if (!cart || cart.items.length === 0) {
-            return res.status(400).json({ message: "Cart is empty" });
-        }
+        if (!cart || !cart.items.length)
+            return res.status(400).json({ success: false, message: "Cart empty" });
 
-        const totalPrice = cart.items.reduce((s, i) => s + i.price * i.quantity, 0);
+        const subTotal = cart.items.reduce(
+            (sum, item) =>
+                sum + (item.priceBerUnit || item.price) * item.quantity,
+            0
+        );
+        const shipping = 10;
+        const tax = subTotal * 0.1;
+        const totalPrice = subTotal + shipping + tax;
 
+
+        let products = cart.items.map(item => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            price: item.priceBerUnit || item.price
+        }));
+
+        // CREATE ORDER
         const newOrder = await orderModel.create({
             userId,
             addressId,
-            products: cart.items,
+            products: products,
+            subTotal,
+            shipping,
+            tax,
             totalPrice
         });
 
-        // Clear cart
+        // CLEAR CART
         cart.items = [];
         await cart.save();
 
-        // Save payment record (optional)
-        await payment.create({
-            userId: userId,
+        // SAVE PAYMENT
+        await paymentModel.create({
+            userId,
             orderId: newOrder._id,
             method: "PayPal",
             amount: totalPrice,
-            status: paymentStatus,
-            transactionId: capture.result.id
+            status: "COMPLETED",
+            transactionId: captureDetails.id,
         });
 
         return res.json({
             success: true,
-            message: "Order created successfully",
-            order: newOrder
+            message: "Payment captured & order created",
+            order: newOrder,
         });
 
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: "Server error" });
-    }
-};
-
-
-exports.getPaymentsByUser = async (req, res) => {
-    const userID = req.user.userID;
-    try {
-        const payments = await payment.find({ userID });
-        res.status(200).json({ payments });
-    } catch (error) {
-        res.status(500).json({ message: "Error fetching payments", error: error.message });
+    } catch (err) {
+        console.error("SERVER ERROR =>", err);
+        res.status(500).json({
+            success: false,
+            message: "Server error while capturing payment",
+            error: err.message,
+        });
     }
 };

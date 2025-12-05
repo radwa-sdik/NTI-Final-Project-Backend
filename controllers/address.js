@@ -75,3 +75,16 @@ exports.updateAddress = async (req, res) => {
         res.status(500).json({ message: 'Server error', error });
     }
 };
+
+exports.getAddressById = async (req, res) => {
+    try {
+        const addressId = req.params.addressId;
+        const address = await addressModel.findById(addressId);
+        if (!address) {
+            return res.status(404).json({ message: 'Address not found' });
+        }
+        res.status(200).json(address);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error });
+    }
+};

@@ -1,15 +1,32 @@
 const productModel = require("../models/products");
 
 exports.createProduct = async (req, res) => {
-    const productData = req.body;
     try {
+        const productData = req.body;
+
+        // If an image was uploaded
+        if (req.file) {
+            productData.productImages = [{
+                imageUrl: `/uploads/products/${req.file.filename}`,
+                isMain: true
+            }];
+        }
+
         const newProduct = new productModel(productData);
         const savedProduct = await newProduct.save();
-        res.status(201).json({ message: "Product created successfully", product: savedProduct });
+
+        res.status(201).json({
+            message: "Product created successfully",
+            product: savedProduct
+        });
     } catch (error) {
-        res.status(500).json({ message: "Error creating product", error: error.message });
+        res.status(500).json({
+            message: "Error creating product",
+            error: error.message
+        });
     }
 };
+
 exports.getAllProductsPaginated = async (req, res) => {
     try {
         const { name, minPrice, maxPrice, inStock, categories} = req.query;
@@ -33,7 +50,7 @@ exports.getAllProductsPaginated = async (req, res) => {
             const list = categories.split(",");       
             filter.category = { $in: list };
         }
-        const products = await productModel.find(filter).skip(skip).limit(limit);
+        const products = await productModel.find(filter).populate('category').skip(skip).limit(limit);
         const total = await productModel.countDocuments(filter);
         res.status(200).json({
             products,
@@ -60,16 +77,41 @@ exports.getProductById = async (req, res) => {
 exports.updateProduct = async (req, res) => {
     try {
         const productId = req.params.id;
-        const updateData = req.body;
-        const updatedProduct = await productModel.findByIdAndUpdate(productId, updateData, { new: true });
+        const updateData = { ...req.body }; // clone req.body
+
+        // ✅ Handle uploaded image
+        if (req.file) {
+            updateData.productImages = [{
+                imageUrl: `/uploads/products/${req.file.filename}`,
+                isMain: true
+            }];
+        }
+
+        // Update product
+        const updatedProduct = await productModel.findByIdAndUpdate(
+            productId,
+            updateData,
+            { new: true, runValidators: true } // returns updated doc and validates fields
+        );
+
         if (!updatedProduct) {
             return res.status(404).json({ message: "Product not found" });
         }
-        res.status(200).json({ message: "Product updated successfully", product: updatedProduct });
+
+        res.status(200).json({
+            message: "Product updated successfully",
+            product: updatedProduct
+        });
+
     } catch (error) {
-        res.status(500).json({ message: "Error updating product", error: error.message });
+        console.error("Update product error:", error);
+        res.status(500).json({
+            message: "Error updating product",
+            error: error.message
+        });
     }
 };
+
 exports.deleteProduct = async (req, res) => {
     try {
         const productId = req.params.id;
