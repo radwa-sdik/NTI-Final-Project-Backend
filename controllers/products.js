@@ -7,7 +7,7 @@ exports.createProduct = async (req, res) => {
         // If an image was uploaded
         if (req.file) {
             productData.productImages = [{
-                imageUrl: req.file.path,
+                imageUrl: `/uploads/products/${req.file.filename}`,
                 isMain: true
             }];
         }
@@ -82,7 +82,7 @@ exports.updateProduct = async (req, res) => {
         // ✅ Handle uploaded image
         if (req.file) {
             updateData.productImages = [{
-                imageUrl: req.file.path,
+                imageUrl: `/uploads/products/${req.file.filename}`,
                 isMain: true
             }];
         }
