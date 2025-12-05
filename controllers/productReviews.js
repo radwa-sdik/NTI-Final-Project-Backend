@@ -13,7 +13,9 @@ exports.createProductReview = async (req, res) => {
 };
 exports.getProductReviews = async (req, res) => {
     try {
-        const reviews = await productReviewModel.find();
+        const { productId } = req.query;
+        const filter = productId ? { productId } : {};
+        const reviews = await productReviewModel.find(filter).populate('userId', 'name email');
         res.status(200).json({ reviews });
     } catch (error) {
         res.status(500).json({ message: "Error fetching product reviews", error: error.message });
