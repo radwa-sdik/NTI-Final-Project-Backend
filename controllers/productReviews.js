@@ -1,4 +1,5 @@
 const productReviewModel = require('../models/productReviews');
+const productModel = require('../models/products');
 
 exports.createProductReview = async (req, res) => {
     const reviewData = req.body;
@@ -6,6 +7,7 @@ exports.createProductReview = async (req, res) => {
     try {
         const newReview = new productReviewModel(reviewData);
         const savedReview = await newReview.save();
+        await updateProductRating(reviewData.productId);
         res.status(201).json({ message: "Product review created successfully", review: savedReview });
     } catch (error) {
         res.status(500).json({ message: "Error creating product review", error: error.message });
@@ -45,6 +47,7 @@ exports.updateProductReview = async (req, res) => {
         if (!updatedReview) {
             return res.status(404).json({ message: "Product review not found" });
         }
+        await updateProductRating(updatedReview.productId);
         res.status(200).json({ message: "Product review updated successfully", review: updatedReview });
     } catch (error) {
         res.status(500).json({ message: "Error updating product review", error: error.message });
@@ -62,8 +65,28 @@ exports.deleteProductReview = async (req, res) => {
         if (!deletedReview) {
             return res.status(404).json({ message: "Product review not found" });
         }
+        await updateProductRating(deletedReview.productId);
         res.status(200).json({ message: "Product review deleted successfully" });
     } catch (error) {
         res.status(500).json({ message: "Error deleting product review", error: error.message });
     }
 };
+
+async function updateProductRating(productId) {
+    const stats = await ProductReview.aggregate([
+        { $match: { productId: mongoose.Types.ObjectId(productId) } },
+        { $group: { _id: "$productId", avgRating: { $avg: "$rating" }, count: { $sum: 1 } } }
+    ]);
+
+    if (stats.length > 0) {
+        await Product.findByIdAndUpdate(productId, {
+            rating: stats[0].avgRating,
+            reviewsCount: stats[0].count
+        });
+    } else {
+        await Product.findByIdAndUpdate(productId, {
+            rating: 0,
+            reviewsCount: 0
+        });
+    }
+}
