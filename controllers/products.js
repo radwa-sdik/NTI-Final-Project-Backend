@@ -30,39 +30,61 @@ exports.createProduct = async (req, res) => {
 
 exports.getAllProductsPaginated = async (req, res) => {
     try {
-        const { name, minPrice, maxPrice, inStock, categories} = req.query;
+        let { name, minPrice, maxPrice, inStock, categories } = req.query;
+
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
+
         const filter = {};
-        if (name) {
-            filter.name = { $regex: name, $options: 'i' };
+
+        // 🔥 Ignore empty name
+        if (name && name.trim() !== "") {
+            filter.name = { $regex: name.trim(), $options: 'i' };
         }
-        if (minPrice) {
+
+        // 🔥 Ignore empty minPrice
+        if (minPrice && minPrice !== "") {
             filter.price = { ...filter.price, $gte: Number(minPrice) };
         }
-        if (maxPrice) {
+
+        // 🔥 Ignore empty maxPrice
+        if (maxPrice && maxPrice !== "") {
             filter.price = { ...filter.price, $lte: Number(maxPrice) };
         }
-        if (inStock !== undefined) {
-            filter.quantity = inStock === 'true' ? { $gt: 0 } : 0;
+
+        // 🔥 Fix inStock = "undefined"
+        if (inStock && inStock !== "undefined") {
+            filter.quantity = inStock === "true" ? { $gt: 0 } : 0;
         }
-        if (categories) {
-            const list = categories.split(",");       
-            filter.category = { $in: list };
+
+        // 🔥 Fix empty categories
+        if (categories && categories.trim() !== "") {
+            const list = categories.split(",").filter(x => x);
+            if (list.length > 0) {
+                filter.category = { $in: list };
+            }
         }
-        const products = await productModel.find(filter).populate('category').skip(skip).limit(limit);
+
+        const products = await productModel.find(filter)
+            .populate('category')
+            .skip(skip)
+            .limit(limit);
+
         const total = await productModel.countDocuments(filter);
+
         res.status(200).json({
             products,
             total,
             page,
             pages: Math.ceil(total / limit)
         });
+
     } catch (error) {
         res.status(500).json({ message: "Error searching products", error: error.message });
     }
 };
+
 exports.getProductById = async (req, res) => {
     try {
         const productId = req.params.id;
