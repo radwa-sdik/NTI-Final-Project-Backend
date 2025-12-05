@@ -1,4 +1,5 @@
 const productModel = require("../models/products");
+const ProductReview = require('../models/productReviews');
 
 exports.createProduct = async (req, res) => {
     try {
@@ -115,15 +116,27 @@ exports.updateProduct = async (req, res) => {
 exports.deleteProduct = async (req, res) => {
     try {
         const productId = req.params.id;
-        const deletedProduct = await productModel.findByIdAndDelete(productId);
+
+        // 1️⃣ Delete the product
+        const deletedProduct = await Product.findByIdAndDelete(productId);
         if (!deletedProduct) {
             return res.status(404).json({ message: "Product not found" });
         }
-        res.status(200).json({ message: "Product deleted successfully" });
+
+        // 2️⃣ Delete all reviews for this product
+        await ProductReview.deleteMany({ productId });
+
+        res.status(200).json({
+            message: "Product and related reviews deleted successfully"
+        });
     } catch (error) {
-        res.status(500).json({ message: "Error deleting product", error: error.message });
+        res.status(500).json({
+            message: "Error deleting product",
+            error: error.message
+        });
     }
 };
+
 
 exports.addProductImage = async (req, res) => {
     try {

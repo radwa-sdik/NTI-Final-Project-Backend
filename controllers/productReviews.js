@@ -96,20 +96,24 @@ exports.deleteProductReview = async (req, res) => {
 
 // --- Helper function to update product rating ---
 async function updateProductRating(productId) {
+    productId = new mongoose.Types.ObjectId(productId);
+
     const stats = await ProductReview.aggregate([
-        { $match: { productId: mongoose.Types.ObjectId(productId) } },
-        { $group: { _id: "$productId", avgRating: { $avg: "$rating" }, count: { $sum: 1 } } }
+        { $match: { productId } },
+        {
+            $group: {
+                _id: "$productId",
+                avgRating: { $avg: "$rating" },
+                count: { $sum: 1 }
+            }
+        }
     ]);
 
-    if (stats.length > 0) {
-        await Product.findByIdAndUpdate(productId, {
-            rating: stats[0].avgRating,
-            reviewsCount: stats[0].count
-        });
-    } else {
-        await Product.findByIdAndUpdate(productId, {
-            rating: 0,
-            reviewsCount: 0
-        });
-    }
+    const updateData = stats.length
+        ? { rating: stats[0].avgRating, reviewsCount: stats[0].count }
+        : { rating: 0, reviewsCount: 0 };
+
+    const productObj = await Product.findById(productId);
+    const result = await Product.findByIdAndUpdate(productId, updateData, { new: true });
 }
+
