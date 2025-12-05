@@ -58,7 +58,7 @@ exports.deleteProductReview = async (req, res) => {
         if (review.userId.toString() !== userId) {
             return res.status(403).json({ message: "You are not authorized to delete this review" });
         }
-        const deletedReview = await review.remove();
+        const deletedReview = await review.deleteOne();
         if (!deletedReview) {
             return res.status(404).json({ message: "Product review not found" });
         }
