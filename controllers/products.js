@@ -1,142 +1,115 @@
-const productModel = require("../models/products");
+const mongoose = require('mongoose');
+const ProductReview = require('../models/productReviews');
+const Product = require('../models/products');
 
-exports.createProduct = async (req, res) => {
+// Create a product review
+exports.createProductReview = async (req, res) => {
     try {
-        const productData = req.body;
+        const reviewData = req.body;
+        reviewData.userId = req.user.userId; // logged-in user
 
-        // If an image was uploaded
-        if (req.file) {
-            productData.productImages = [{
-                imageUrl: `/uploads/products/${req.file.filename}`,
-                isMain: true
-            }];
-        }
+        const newReview = new ProductReview(reviewData);
+        const savedReview = await newReview.save();
 
-        const newProduct = new productModel(productData);
-        const savedProduct = await newProduct.save();
+        await updateProductRating(reviewData.productId);
 
         res.status(201).json({
-            message: "Product created successfully",
-            product: savedProduct
+            message: "Product review created successfully",
+            review: savedReview
         });
     } catch (error) {
-        res.status(500).json({
-            message: "Error creating product",
-            error: error.message
+        res.status(500).json({ message: "Error creating product review", error: error.message });
+    }
+};
+
+// Get all reviews for a product
+exports.getProductReviews = async (req, res) => {
+    try {
+        const { productId } = req.query;
+        const filter = productId ? { productId } : {};
+        const reviews = await ProductReview.find(filter)
+            .populate('userId', 'name email');
+
+        res.status(200).json({ reviews });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching product reviews", error: error.message });
+    }
+};
+
+// Get review by ID
+exports.getProductReviewById = async (req, res) => {
+    try {
+        const reviewId = req.params.id;
+        const review = await ProductReview.findById(reviewId);
+        if (!review) return res.status(404).json({ message: "Product review not found" });
+
+        res.status(200).json({ review });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching product review", error: error.message });
+    }
+};
+
+// Update a review
+exports.updateProductReview = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const reviewId = req.params.id;
+        const updateData = req.body;
+
+        const review = await ProductReview.findById(reviewId);
+        if (!review) return res.status(404).json({ message: "Product review not found" });
+
+        if (review.userId.toString() !== userId) {
+            return res.status(403).json({ message: "You are not authorized to update this review" });
+        }
+
+        const updatedReview = await ProductReview.findByIdAndUpdate(reviewId, updateData, { new: true });
+        await updateProductRating(updatedReview.productId);
+
+        res.status(200).json({ message: "Product review updated successfully", review: updatedReview });
+    } catch (error) {
+        res.status(500).json({ message: "Error updating product review", error: error.message });
+    }
+};
+
+// Delete a review
+exports.deleteProductReview = async (req, res) => {
+    try {
+        const reviewId = req.params.id;
+        const userId = req.user.userId;
+
+        const review = await ProductReview.findById(reviewId);
+        if (!review) return res.status(404).json({ message: "Product review not found" });
+
+        if (review.userId.toString() !== userId) {
+            return res.status(403).json({ message: "You are not authorized to delete this review" });
+        }
+
+        await review.deleteOne();
+        await updateProductRating(review.productId);
+
+        res.status(200).json({ message: "Product review deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ message: "Error deleting product review", error: error.message });
+    }
+};
+
+// --- Helper function to update product rating ---
+async function updateProductRating(productId) {
+    const stats = await ProductReview.aggregate([
+        { $match: { productId: mongoose.Types.ObjectId(productId) } },
+        { $group: { _id: "$productId", avgRating: { $avg: "$rating" }, count: { $sum: 1 } } }
+    ]);
+
+    if (stats.length > 0) {
+        await Product.findByIdAndUpdate(productId, {
+            rating: stats[0].avgRating,
+            reviewsCount: stats[0].count
+        });
+    } else {
+        await Product.findByIdAndUpdate(productId, {
+            rating: 0,
+            reviewsCount: 0
         });
     }
-};
-
-exports.getAllProductsPaginated = async (req, res) => {
-    try {
-        const { name, minPrice, maxPrice, inStock, categories} = req.query;
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const skip = (page - 1) * limit;
-        const filter = {};
-        if (name) {
-            filter.name = { $regex: name, $options: 'i' };
-        }
-        if (minPrice) {
-            filter.price = { ...filter.price, $gte: Number(minPrice) };
-        }
-        if (maxPrice) {
-            filter.price = { ...filter.price, $lte: Number(maxPrice) };
-        }
-        if (inStock !== undefined) {
-            filter.quantity = inStock === 'true' ? { $gt: 0 } : 0;
-        }
-        if (categories) {
-            const list = categories.split(",");       
-            filter.category = { $in: list };
-        }
-        const products = await productModel.find(filter).populate('category').skip(skip).limit(limit);
-        const total = await productModel.countDocuments(filter);
-        res.status(200).json({
-            products,
-            total,
-            page,
-            pages: Math.ceil(total / limit)
-        });
-    } catch (error) {
-        res.status(500).json({ message: "Error searching products", error: error.message });
-    }
-};
-exports.getProductById = async (req, res) => {
-    try {
-        const productId = req.params.id;
-        const product = await productModel.findById(productId).populate('category');
-        if (!product) {
-            return res.status(404).json({ message: "Product not found" });
-        }
-        res.status(200).json({ product });
-    } catch (error) {
-        res.status(500).json({ message: "Error fetching product", error: error.message });
-    }
-};
-exports.updateProduct = async (req, res) => {
-    try {
-        const productId = req.params.id;
-        const updateData = { ...req.body }; // clone req.body
-
-        // ✅ Handle uploaded image
-        if (req.file) {
-            updateData.productImages = [{
-                imageUrl: `/uploads/products/${req.file.filename}`,
-                isMain: true
-            }];
-        }
-
-        // Update product
-        const updatedProduct = await productModel.findByIdAndUpdate(
-            productId,
-            updateData,
-            { new: true, runValidators: true } // returns updated doc and validates fields
-        );
-
-        if (!updatedProduct) {
-            return res.status(404).json({ message: "Product not found" });
-        }
-
-        res.status(200).json({
-            message: "Product updated successfully",
-            product: updatedProduct
-        });
-
-    } catch (error) {
-        console.error("Update product error:", error);
-        res.status(500).json({
-            message: "Error updating product",
-            error: error.message
-        });
-    }
-};
-
-exports.deleteProduct = async (req, res) => {
-    try {
-        const productId = req.params.id;
-        const deletedProduct = await productModel.findByIdAndDelete(productId);
-        if (!deletedProduct) {
-            return res.status(404).json({ message: "Product not found" });
-        }
-        res.status(200).json({ message: "Product deleted successfully" });
-    } catch (error) {
-        res.status(500).json({ message: "Error deleting product", error: error.message });
-    }
-};
-
-exports.addProductImage = async (req, res) => {
-    try {
-        const productId = req.params.id;
-        const { imageUrl, isMain } = req.body;
-        const product = await productModel.findById(productId);
-        if (!product) {
-            return res.status(404).json({ message: "Product not found" });
-        }
-        product.productImages.push({ imageUrl, isMain });
-        await product.save();
-        res.status(200).json({ message: "Image added successfully", product });
-    } catch (error) {
-        res.status(500).json({ message: "Error adding image", error: error.message });
-    }
-};
+}
