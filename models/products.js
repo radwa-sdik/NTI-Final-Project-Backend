@@ -15,6 +15,18 @@ const productSchema = new mongoose.Schema({
 productSchema.virtual("inStock").get(function () {
     return this.quantity > 0;
 });
+
+// virtual for averageRating
+productSchema.virtual("rating").get(async function () {
+    const ProductReview = mongoose.model('ProductReview');
+    const result = await ProductReview.aggregate([
+        { $match: { productId: this._id } },
+        { $group: { _id: null, avgRating: { $avg: "$rating" }, count: { $sum: 1 } } }
+    ]);
+    if (result.length > 0) return result[0].avgRating;
+    return 0;
+});
+
 productSchema.set("toJSON", { virtuals: true });
 productSchema.set("toObject", { virtuals: true });
 module.exports = mongoose.model('Product', productSchema);
