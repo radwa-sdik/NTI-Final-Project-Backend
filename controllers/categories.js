@@ -13,7 +13,7 @@ exports.createCategory = async (req, res) => {
 
 exports.getAllCategories = async (req, res) => {
     try {
-        const categories = await categoryModel.find();
+        const categories = await categoryModel.find().populate('parentCategory');
         res.status(200).json({ categories });
     } catch (error) {
         res.status(500).json({ message: "Error fetching categories", error: error.message });
@@ -23,7 +23,7 @@ exports.getAllCategories = async (req, res) => {
 exports.getCategoryById = async (req, res) => {
     try {
         const categoryId = req.params.id;
-        const category = await categoryModel.findById(categoryId);
+        const category = await categoryModel.findById(categoryId).populate('parentCategory');
         if (!category) {
             return res.status(404).json({ message: "Category not found" });
         }
