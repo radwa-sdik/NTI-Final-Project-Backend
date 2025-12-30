@@ -93,7 +93,7 @@ exports.getProductById = async (req, res) => {
             options: { sort: { createdAt: -1 } },
             populate: {
                 path: 'userId',
-                select: 'name email'
+                select: '_id name email'
             }
         });
         if (!product) {
