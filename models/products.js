@@ -17,7 +17,11 @@ const productSchema = new mongoose.Schema({
 productSchema.virtual("inStock").get(function () {
     return this.quantity > 0;
 });
-
+productSchema.virtual('reviews', {
+  ref: 'ProductReview',
+  localField: '_id',
+  foreignField: 'productId'
+});
 productSchema.set("toJSON", { virtuals: true });
 productSchema.set("toObject", { virtuals: true });
 module.exports = mongoose.model('Product', productSchema);
