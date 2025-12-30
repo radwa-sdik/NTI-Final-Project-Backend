@@ -88,7 +88,14 @@ exports.getAllProductsPaginated = async (req, res) => {
 exports.getProductById = async (req, res) => {
     try {
         const productId = req.params.id;
-        const product = await productModel.findById(productId).populate('category').populate('reviews');
+        const product = await productModel.findById(productId).populate('category').populate({
+            path: 'reviews',
+            options: { sort: { createdAt: -1 } },
+            populate: {
+                path: 'userId',
+                select: 'name email'
+            }
+        });
         if (!product) {
             return res.status(404).json({ message: "Product not found" });
         }
