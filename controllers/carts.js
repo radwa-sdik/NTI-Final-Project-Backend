@@ -77,3 +77,32 @@ exports.clearCart = async (req, res) => {
         res.status(500).json({ message: 'Server error', error });
     }
 };
+
+exports.updateCartItem = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { productId, quantity } = req.body;
+        let product = await productModel.findById(productId);
+        if (!product) {
+            return res.status(404).json({ message: 'Product not found' });
+        }
+        if (product.stock < quantity) {
+            return res.status(400).json({ message: 'Insufficient stock' });
+        }
+        let cart = await cartModel.findOne({ userId });
+        if (!cart) {
+            return res.status(404).json({ message: 'Cart not found' });
+        }
+
+        const itemIndex = cart.items.findIndex(item => item.productId.toString() === productId);
+        if (itemIndex > -1) {
+            // Product exists in cart, update quantity
+            cart.items[itemIndex].quantity = quantity;
+        } else {
+            return res.status(404).json({ message: 'Product not found in cart' });
+        }
+
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error });
+    }
+};
