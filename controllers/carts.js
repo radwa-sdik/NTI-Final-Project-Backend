@@ -101,6 +101,8 @@ exports.updateCartItem = async (req, res) => {
         } else {
             return res.status(404).json({ message: 'Product not found in cart' });
         }
+        await cart.save();
+        res.status(200).json(cart);
 
     } catch (error) {
         res.status(500).json({ message: 'Server error', error });
