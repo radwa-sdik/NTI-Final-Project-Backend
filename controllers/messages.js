@@ -43,6 +43,9 @@ exports.sendMessage = async (req, res) => {
         const onlineUsers = req.onlineUsers;
 
         // Emit to all OTHER participants
+        if(conversation.participants.length < 2)
+            conversation.participants.push(senderId); // Ensure sender is included
+        
         conversation.participants.forEach(participantId => {
             const socketId = onlineUsers.get(participantId.toString());
             if (socketId && participantId.toString() !== senderId) {
