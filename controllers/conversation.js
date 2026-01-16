@@ -52,6 +52,17 @@ exports.closeConversation = async (req, res) => {
     }
 };
 
+exports.getUserConversations = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const conversations = await Conversation.find({ participants: userId })
+            .populate("participants", "-password").sort({ updatedAt: -1 });
+        res.status(200).json(conversations);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
 exports.getAllConversationsForAdmin = async (req, res) => {
     try {
         const conversations = await Conversation.find()
