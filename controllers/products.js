@@ -5,14 +5,6 @@ exports.createProduct = async (req, res) => {
     try {
         const productData = req.body;
 
-        // If an image was uploaded
-        if (req.file) {
-            productData.productImages = [{
-                imageUrl: `/uploads/products/${req.file.filename}`,
-                isMain: true
-            }];
-        }
-
         const newProduct = new productModel(productData);
         const savedProduct = await newProduct.save();
 
@@ -108,14 +100,6 @@ exports.updateProduct = async (req, res) => {
     try {
         const productId = req.params.id;
         const updateData = { ...req.body }; // clone req.body
-
-        // ✅ Handle uploaded image
-        if (req.file) {
-            updateData.productImages = [{
-                imageUrl: `/uploads/products/${req.file.filename}`,
-                isMain: true
-            }];
-        }
 
         // Update product
         const updatedProduct = await productModel.findByIdAndUpdate(
