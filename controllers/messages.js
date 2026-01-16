@@ -47,12 +47,22 @@ exports.sendMessage = async (req, res) => {
         const onlineUsers = req.onlineUsers;
 
         // Emit to all participants except sender
+        // Emit to all participants
         conversation.participants.forEach(participantId => {
             const socketId = onlineUsers.get(participantId.toString());
-            if (socketId && participantId.toString() !== senderId) {
+            if (socketId) {
                 io.to(socketId).emit("new-message", msg);
             }
         });
+
+        // Also emit to all online admins
+        for (let [userId, socketId] of onlineUsers.entries()) {
+            const user = await User.findById(userId); // make sure you have User model
+            if (user.role === "Admin") {
+                io.to(socketId).emit("new-message", msg);
+            }
+        }
+
 
         res.status(201).json(msg);
     } catch (err) {
@@ -91,7 +101,7 @@ exports.markAsRead = async (req, res) => {
         }
 
         const allowed = conversation.participants
-          .some(id => id.toString() === userId);
+            .some(id => id.toString() === userId);
 
         if (!allowed && req.user.role !== "Admin") {
             return res.status(403).json({ error: "Not authorized" });
