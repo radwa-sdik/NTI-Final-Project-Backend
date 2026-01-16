@@ -8,19 +8,23 @@ exports.sendMessage = async (req, res) => {
         const senderId = req.user.userId;
         const senderType = req.user.role === "Admin" ? "Admin" : "User";
 
+        // Validate content
         if (!content?.trim()) {
             return res.status(400).json({ error: "Message content is required" });
         }
 
+        // Find conversation
         const conversation = await Conversation.findById(conversationId);
         if (!conversation) {
             return res.status(404).json({ error: "Conversation not found" });
         }
 
-        const isParticipant = conversation.participants
-            .some(id => id.toString() === senderId);
-        // 🔒 Authorization check
-        if (!isParticipant) {
+        // Authorization: Users must be participants, Admin can bypass
+        const isParticipant = conversation.participants.some(
+            id => id.toString() === senderId
+        );
+
+        if (req.user.role !== "Admin" && !isParticipant) {
             return res.status(403).json({ error: "Not allowed in this conversation" });
         }
 
@@ -42,10 +46,7 @@ exports.sendMessage = async (req, res) => {
         const io = req.io;
         const onlineUsers = req.onlineUsers;
 
-        // Emit to all OTHER participants
-        if(conversation.participants.length < 2)
-            conversation.participants.push(senderId); // Ensure sender is included
-        
+        // Emit to all participants except sender
         conversation.participants.forEach(participantId => {
             const socketId = onlineUsers.get(participantId.toString());
             if (socketId && participantId.toString() !== senderId) {
@@ -54,12 +55,12 @@ exports.sendMessage = async (req, res) => {
         });
 
         res.status(201).json(msg);
-
     } catch (err) {
-        console.error(err);
+        console.error("Error in sendMessage:", err);
         res.status(500).json({ error: "Failed to send message" });
     }
 };
+
 
 
 
