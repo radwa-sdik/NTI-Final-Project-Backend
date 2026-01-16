@@ -5,50 +5,59 @@ const User = require("../models/users");
 exports.sendMessage = async (req, res) => {
     try {
         const { conversationId, content } = req.body;
-        const sender = req.user.userId;
+        const senderId = req.user.userId;
         const senderType = req.user.role === "Admin" ? "Admin" : "User";
 
-        // Create new message
+        if (!content?.trim()) {
+            return res.status(400).json({ error: "Message content is required" });
+        }
+
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) {
+            return res.status(404).json({ error: "Conversation not found" });
+        }
+
+        const isParticipant = conversation.participants
+            .some(id => id.toString() === senderId);
+        // 🔒 Authorization check
+        if (!isParticipant) {
+            return res.status(403).json({ error: "Not allowed in this conversation" });
+        }
+
+        // Create message
         let msg = await Message.create({
             conversation: conversationId,
-            sender,
+            sender: senderId,
             senderType,
             content
         });
 
-        // Populate sender for frontend UI
-        msg = await Message.findById(msg._id).populate("sender");
+        msg = await msg.populate("sender");
 
         // Update conversation timestamp
-        await Conversation.findByIdAndUpdate(conversationId, {
-            updatedAt: Date.now()
-        });
+        conversation.updatedAt = Date.now();
+        await conversation.save();
 
-        // Emit via sockets
+        // Socket logic
         const io = req.io;
         const onlineUsers = req.onlineUsers;
 
-        if (senderType === "User") {
-            // Send to ALL admins
-            io.emit("admin-new-message", msg);
-
-        } else {
-            // Find the user participant
-            const conversation = await Conversation.findById(conversationId);
-            const userId = conversation.participants[0].toString();
-
-            const userSocket = onlineUsers.get(userId);
-            if (userSocket) {
-                io.to(userSocket).emit("user-new-message", msg);
+        // Emit to all OTHER participants
+        conversation.participants.forEach(participantId => {
+            const socketId = onlineUsers.get(participantId.toString());
+            if (socketId && participantId.toString() !== senderId) {
+                io.to(socketId).emit("new-message", msg);
             }
-        }
+        });
 
         res.status(201).json(msg);
 
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error(err);
+        res.status(500).json({ error: "Failed to send message" });
     }
 };
+
 
 
 exports.getMessages = async (req, res) => {
@@ -70,8 +79,26 @@ exports.markAsRead = async (req, res) => {
     try {
         const { conversationId } = req.params;
 
+        const userId = req.user.userId;
+
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) {
+            return res.status(404).json({ error: "Conversation not found" });
+        }
+
+        const allowed = conversation.participants
+          .some(id => id.toString() === userId);
+
+        if (!allowed && req.user.role !== "Admin") {
+            return res.status(403).json({ error: "Not authorized" });
+        }
+
         await Message.updateMany(
-            { conversation: conversationId, isRead: false },
+            {
+                conversation: conversationId,
+                isRead: false,
+                sender: { $ne: userId }
+            },
             { $set: { isRead: true } }
         );
 

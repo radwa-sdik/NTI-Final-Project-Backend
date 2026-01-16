@@ -5,7 +5,7 @@ const {authorizeRoles} = require("../middlewares/authorizeRoles");
 const router = express.Router();
 
 router.post("/start", auth, conversationController.startConversation);
-router.put("/close/:conversationId", auth, authorizeRoles("User"), conversationController.closeConversation);
+router.put("/close/:conversationId", auth, conversationController.closeConversation);
 router.get("/", auth, authorizeRoles("Admin"), conversationController.getAllConversationsForAdmin);
 
 module.exports = router;

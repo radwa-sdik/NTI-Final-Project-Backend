@@ -15,6 +15,9 @@ exports.startConversation = async (req, res) => {
             convo = await Conversation.create({
                 participants: [userId]
             });
+        }else if (req.user.role === "Admin" && !convo.participants.includes(userId)) {
+            convo.participants.push(userId);
+            await convo.save();
         }
 
         return res.status(200).json(convo);
@@ -31,6 +34,14 @@ exports.closeConversation = async (req, res) => {
         if (!conversation) {
             return res.status(404).json({ error: "Conversation not found" });
         }
+
+        if (
+        req.user.role !== "Admin" &&
+        !conversation.participants.includes(req.user.userId)
+        ) {
+            return res.status(403).json({ error: "Not authorized" });
+        }
+
         conversation.status = "closed";
         conversation.closedAt = new Date();
         await conversation.save();
@@ -44,7 +55,7 @@ exports.closeConversation = async (req, res) => {
 exports.getAllConversationsForAdmin = async (req, res) => {
     try {
         const conversations = await Conversation.find()
-            .populate("participants", "-password");
+            .populate("participants", "-password").sort({ updatedAt: -1 });
 
         res.status(200).json(conversations);
     } catch (err) {
